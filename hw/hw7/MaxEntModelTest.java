@@ -16,19 +16,100 @@ class MaxEntModelTest {
     { 
         ArrayList<String> results = new ArrayList<String>();
         
-        for(String[] feats : feat_matrix)
+        for(String[] raw_feats : feat_matrix)
         {
             if(feats != null)
-            {
+            {   
                 String tag = model.getBestOutcome(model.eval(feats));
                 results.add(tag);
+            }
+            else
+            {
+                results.add(null);
             }
         }
         
         return results;
     }
+    
+    
+    private static String[] add_prevBioFeat(String[] feats, String tag)
+    {
+        String[] ext_feats = new String[feats.length + 1];
+        String new_feat = "prevBIO="+tag;
+        ext_feats[ext_feats.length - 1] = new_feat;
+        return ext_feats;
+    }
 
-    //TODO: public static String[] viterbi_decode
+   private static int find_which_max(double[] arr)
+   {
+       for(int i = 0, double val = 0.0, int max_ix = 0; i < arr.length; i++)
+       {
+           if(arr[i] > val)
+           {
+               val = arr[i];
+               max_ix = i;
+           }
+       }
+       
+       return max_ix;
+       
+   }
+
+
+    //Decode 1 sentence
+    public static ArrayList<String> viterbi_decode0(GISModel model, ArrayList<String[]> feat_matrix)
+    {
+        
+        int n_states = model.getNumOutcomes() + 1; //We add 1 more state, for null
+        int n_obs = feat_matrix.size(); 
+        
+        double[] v[n_states][n_obs];
+        int[]    p[n_states][n_obs];
+                 
+        //Initial probability
+        double[] estimates = model.eval(add_prevBioFeat(feat_matrix[0], model.getOutcome(n_states)));
+       
+        for(int i = 0; i < n_states; i++)
+        {
+            v[i][0] = estimates[i];
+        }
+        
+        //Recursive steps
+        for(int j = 1; j < feat_matrix.size(); j++)
+        { //for each observation 
+            //create a matrix to hold possible values, one row per possible prior state
+            ArrayList<double[]> estimateMatrix = new ArrayList<double[]>(n_states); 
+            
+            for(int i = 0; i < n_states; i++)
+            { //for each possible prior state
+                double v_prev = v[i][j - 1];
+                estimates = model.eval(add_prevBioFeat(feat_matrix[j], model.getOutcome(i)));
+                estimateMatrix.add(estimates);
+            }
+            
+            //Find max and store
+            double[][] step_result = find_max_matrix(estimateMatrix);
+            v[][j].copyarray(step_result[0]);
+            p[][j].copyarray(step_result[0]);
+        }
+        
+        //Decode
+        ArrayList<String> results = new ArrayList<String>();
+        int back_pointer = find_which_max(p[][n_obs - 1]);
+        results.add(back_pointer);
+        
+        for(int j = n_obs - 2; j > 0; j--)
+        {
+            back_pointer = p[j][back_pointer];
+            results.add(back_pointer);
+        }
+        
+        return Collections.reverse(results);
+        
+    }
+    
+    
     
     
     public static double simple_accuracy(ArrayList<String> predicted, ArrayList<String> realized) { 
@@ -40,17 +121,23 @@ class MaxEntModelTest {
         }
         else
         {
-            int acc = 0;
+            int acc = 0, len = 0;
             
             for(int i = 0; i < predicted.size(); i++)
             {
-                if(predicted.get(i).equals(realized.get(i)))
+                if(predicted.get(i) != null) //don't consider empty lines in calc
                 {
-                    acc++;
+                    len++;
+                   
+                    if(predicted.get(i).equals(realized.get(i)))
+                    {
+                        acc++;
+                    }
                 }
+
             }
             
-            return ((double) acc) / ((double) predicted.size());
+            return ((double) acc) / ((double) len);
         }  
     }
     
@@ -106,6 +193,7 @@ class MaxEntModelTest {
                 else
                 {
                     feature_matrix.add(null); //add a marker for boundary
+                    realized_tags.add(null); //add a marker for boundary
                 }
 
             }
