@@ -3,7 +3,10 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Arrays;
 import java.io.File;
+
 
 import opennlp.maxent.*;
 import opennlp.maxent.io.*;
@@ -16,7 +19,7 @@ class MaxEntModelTest {
     { 
         ArrayList<String> results = new ArrayList<String>();
         
-        for(String[] raw_feats : feat_matrix)
+        for(String[] feats : feat_matrix)
         {
             if(feats != null)
             {   
@@ -33,21 +36,40 @@ class MaxEntModelTest {
     }
     
     
-    private static String[] add_prevBioFeat(String[] feats, String tag)
+    private static String[] mod_prevBioFeat(String[] feats, String tag)
     {
-        String[] ext_feats = new String[feats.length + 1];
-        String new_feat = "prevBIO="+tag;
-        ext_feats[ext_feats.length - 1] = new_feat;
-        return ext_feats;
+        //modify a prevBio=null to the new tag
+        String[] mod_feats = new String[feats.length];
+    
+        
+        for(int i = 0; i < feats.length; i++)
+        {
+            String[] feat_comp = feats[i].split("=");
+            
+            if(feat_comp[0].equals("prevBIO"))
+            {
+                mod_feats[i] = "prevBIO=" + tag;
+            }
+            else
+            {
+                mod_feats[i] = feats[i];
+            }
+        }
+        
+        return mod_feats;
+        
     }
 
-   private static int find_which_max(double[] arr)
+   private static int find_which_max(double[][] matrix, int col)
    {
-       for(int i = 0, double val = 0.0, int max_ix = 0; i < arr.length; i++)
+       double val = 0.0;
+       int max_ix = 0;
+       
+       for(int i = 0; i < matrix.length; i++)
        {
-           if(arr[i] > val)
+           if(matrix[i][col] > val)
            {
-               val = arr[i];
+               val = matrix[i][col];
                max_ix = i;
            }
        }
@@ -55,57 +77,156 @@ class MaxEntModelTest {
        return max_ix;
        
    }
+   
+   private static void find_max_viterbi(ArrayList<double[]> matrix, double[][] v, int[][] p, int col)
+   {
+       int n_states = matrix.size();
+       double[] poss;
+       double[] max_probs = new double[n_states];
+       int[] max_ix = new int[n_states];
+       
+       
+       for(int i = 0; i < n_states; i++)
+       {
+           poss = matrix.get(i);
+           
+           for(int j = 0; j < n_states; j++)
+           {
+               if(poss[j] > max_probs[j])
+               {
+                    max_probs[j] = poss[j];
+                    max_ix[j] = i;
+               }
+           }
+       }
+       
+       //copy values into our v and p matrices
+       for(int i = 0 ; i < n_states; i++) {
+           v[i][col] = max_probs[i];
+           p[i][col] = max_ix[i];
+       } 
+       
+   }
 
+    public static void print_col(double[][] arr, int col) {
+        int num_rows = arr.length;
+        
+        for(int i = 0; i < num_rows; i++) {
+            System.out.print(arr[i][col] + " ");
+        }
+        
+        System.out.println();
+        
+    }
+    
+
+    public static void print_col(int[][] arr, int col) {
+        int num_rows = arr.length;
+        
+        for(int i = 0; i < num_rows; i++) {
+            System.out.print(arr[i][col] + " ");
+        }
+        
+        System.out.println();
+        
+    }
 
     //Decode 1 sentence
     public static ArrayList<String> viterbi_decode0(GISModel model, ArrayList<String[]> feat_matrix)
     {
         
-        int n_states = model.getNumOutcomes() + 1; //We add 1 more state, for null
+        int n_states = model.getNumOutcomes();
         int n_obs = feat_matrix.size(); 
         
-        double[] v[n_states][n_obs];
-        int[]    p[n_states][n_obs];
+        String[] mod_feats;
+        double[][] v = new double[n_states][n_obs]; //viterbi probabilities
+        int[][]    p = new int[n_states][n_obs]; //viterbi backpointer
                  
         //Initial probability
-        double[] estimates = model.eval(add_prevBioFeat(feat_matrix[0], model.getOutcome(n_states)));
+        double[] estimates = model.eval(mod_prevBioFeat(feat_matrix.get(0),"null"));
+        System.out.println("------> New Sentence");
+        System.out.println("Initial Estimates v0():" + model.getAllOutcomes(estimates));
        
         for(int i = 0; i < n_states; i++)
         {
             v[i][0] = estimates[i];
         }
-        
+
         //Recursive steps
-        for(int j = 1; j < feat_matrix.size(); j++)
+        for(int j = 1; j < n_obs; j++)
         { //for each observation 
             //create a matrix to hold possible values, one row per possible prior state
-            ArrayList<double[]> estimateMatrix = new ArrayList<double[]>(n_states); 
+            ArrayList<double[]> estimateMatrix = new ArrayList<double[]>(); 
             
             for(int i = 0; i < n_states; i++)
-            { //for each possible prior state
+            { //for each possible prior state: P(s|s', o)
                 double v_prev = v[i][j - 1];
-                estimates = model.eval(add_prevBioFeat(feat_matrix[j], model.getOutcome(i)));
+                System.out.println("Obs:" + j);
+                System.out.println("v_"+ j + "-1(" + model.getOutcome(i) + "):" + v_prev);
+                mod_feats = mod_prevBioFeat(feat_matrix.get(j), model.getOutcome(i));
+                estimates = model.eval(mod_feats);
+                System.out.println("P(x|x'):" + model.getAllOutcomes(estimates));
+                System.out.println(Arrays.toString(mod_feats));
+                
+                //multiply by previous viterbi prob: P(s|s',o) * v_t-1(s')
+                for(int k = 0; k < n_states; k++) {
+                    estimates[k] = estimates[k] * v_prev;
+                }
+                System.out.println("P(x|x') * v:" + model.getAllOutcomes(estimates));
+                //add to estimate matrix
                 estimateMatrix.add(estimates);
             }
             
             //Find max and store
-            double[][] step_result = find_max_matrix(estimateMatrix);
-            v[][j].copyarray(step_result[0]);
-            p[][j].copyarray(step_result[0]);
+            find_max_viterbi(estimateMatrix, v, p, j);
+            System.out.print("V: "); 
+            print_col(v, j);
+            System.out.print("P: ");
+            print_col(p, j);
+            
         }
         
         //Decode
+       
         ArrayList<String> results = new ArrayList<String>();
-        int back_pointer = find_which_max(p[][n_obs - 1]);
-        results.add(back_pointer);
+        int back_pointer = find_which_max(v, n_obs - 1); //find last state that maximizes probability
+        results.add(model.getOutcome(back_pointer));
         
-        for(int j = n_obs - 2; j > 0; j--)
+        //trace back based on back pointer
+        for(int j = n_obs - 1; j > 0; j--){ //we already decoded last position
+            back_pointer = p[back_pointer][j];
+            results.add(model.getOutcome(back_pointer));
+        }
+        Collections.reverse(results);
+        return results;
+        
+    }
+    
+    //decode an entire document using viterbi,calls viterbi_decode0 on each sentence separately
+    public static ArrayList<String> viterbi_decode(GISModel model, ArrayList<String[]> feat_matrix) {
+        ArrayList<String> results = new ArrayList<String>();
+        String[] word_features = null;
+        ArrayList<String[]> sentence_features = new ArrayList<String[]>();
+        
+        for(int i = 0; i < feat_matrix.size(); i++){
+            word_features = feat_matrix.get(i);
+            
+            if(word_features == null) {
+                //Decode 1 sentence, we reached a sentence boundary
+                results.addAll(viterbi_decode0(model, sentence_features)); 
+                results.add(null); //add an empty result to mark boundary
+                sentence_features = new ArrayList<String[]>();  //create new for next sentence to use
+            } else {
+                sentence_features.add(word_features);
+            }
+        }
+        //The loop above could miss a decode if there is no null at the end
+        if(sentence_features.size() != 0)
         {
-            back_pointer = p[j][back_pointer];
-            results.add(back_pointer);
+            results.addAll(viterbi_decode0(model, sentence_features));
         }
         
-        return Collections.reverse(results);
+        return results;
         
     }
     
@@ -143,13 +264,13 @@ class MaxEntModelTest {
     
     public static void usage()
     {
-        System.out.println("MaxEndModelTest usage: gis_model_file feature_txt_file");
+        System.out.println("MaxEndModelTest usage: gis_model_file feature_txt_file [-simple|-viterbi]");
     }
     
     public static void main(String[] argv)
     {
         //Test to make sure that command line options are ok
-        if(argv.length != 2)
+        if(argv.length != 3)
         {
             MaxEntModelTest.usage();
             System.exit(1);
@@ -210,7 +331,16 @@ class MaxEntModelTest {
         
         
         //model predictions
-        ArrayList<String> predicted_tags = simple_decode(model, feature_matrix); 
+        //
+        ArrayList<String> predicted_tags;
+        if(argv[2].equals("-simple"))
+         {
+            predicted_tags = simple_decode(model, feature_matrix); 
+        } else {
+            predicted_tags = viterbi_decode(model, feature_matrix);
+        }
+
+            
         //Model accuracy
         double accuracy = simple_accuracy(predicted_tags, realized_tags);
         
