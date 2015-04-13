@@ -108,6 +108,17 @@ class Bigrammodel:
     def tag_corpus(self, corpus):
         return [self.tag_sent(sent) for sent in corpus]
         
+        
+def testrun():
+    for i in xrange(len(test.doc_without_tags)):
+        if(i % 1000 == 0):
+            print "running %d" % i
+        res = test.m.tag_sent(test.doc_without_tags[i])
+        
+
+
+
+
 
 
 from tigerutil import *
