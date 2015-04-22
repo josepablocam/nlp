@@ -52,7 +52,7 @@ class Ngrammodel:
     def make_ngram(self, n, input):
         return zip(*[input[i:] for i in range(n)])
         
-    def train_trans(self, n, corpus):
+    def count_ngrams(self, n, corpus):
         trans = defaultdict(float) #create empty dictionary for trans
         trans_denom = defaultdict(float) #normalizer for transitions
         ##ngram transitions in data
@@ -63,17 +63,23 @@ class Ngrammodel:
             for ngram in ngrams:
                 trans[ngram] += 1 #count ngrams
                 trans_denom[ngram[ :-1]] += 1 #count denominator: dropping last in ngram
-                
+        return trans, trans_denom
+        
+    def laplace_smooth(self, trans, trans_denom):        
         ##we perform plus 1 smoothing for the ngram transitions
         ext_labels = self.labels + [ self.START, self.STOP ]
         number_of_tags = len(ext_labels)
-        
-        for ngram in itertools.product(*[ext_labels for i in range(n)]):
+        ngram_len = len(trans.iterkeys().next())
+        for ngram in itertools.product(*[ext_labels for i in range(ngram_len)]):
             trans[ngram] += 1 ## add 1 smoothing
             trans[ngram] /= float(trans_denom[ngram[:-1]] + number_of_tags) #normalize
 
-        #to prob and assign
-        self.trans = dict(trans)
+        return dict(trans)
+    
+    def train_trans(self, n, corpus):
+        ngrams_cts, ngrams_denom_cts = self.count_ngrams(n, corpus)
+        self.trans = self.laplace_smooth(ngrams_cts, ngrams_denom_cts)
+     
                 
     def train(self, n, corpus):
         self.train_emit(corpus)
@@ -86,7 +92,14 @@ class Ngrammodel:
         return log(x) if x != 0 else float('nan')
         
     def tag_corpus(self, corpus):
-        return [self.tag_sent(sent) for sent in corpus]
+        clen = len(corpus)
+        denom = float(clen)
+        results = []
+        for i in xrange(clen):
+            results.append(self.tag_sent(corpus[i]))
+            if i % 1000 == 0:
+                print "%f done" %((i + 1) / denom)
+        return results
      
     def confusion_matrix_sent(self, golden, predicted):
         confusion = defaultdict(float)
