@@ -7,6 +7,7 @@ from math import log, isnan
 from collections import defaultdict
 import numpy as np
 from bigrammodel import Bigrammodel
+import itertools
 
 class BigrammodelKN(Bigrammodel):
     """ bigram-based POS tagger with kneser-ney smoothing"""
@@ -16,11 +17,11 @@ class BigrammodelKN(Bigrammodel):
         self.delta = delta
       
     def train(self, corpus):
-        Bigrammodel.train_emit(corpus)
-        self.train_trans(self, corpus)
+        Bigrammodel.train_emit(self, corpus)
+        self.train_trans(corpus)
 
     def train_trans(self, corpus):
-        bigram_cts, bigram_denom_cts = Bigrammodel.count_ngrams(2, corpus)
+        bigram_cts, bigram_denom_cts = Bigrammodel.count_ngrams(self, 2, corpus)
         self.trans = self.kn_smooth(bigram_cts, bigram_denom_cts)
        
     def kn_smooth(self, bigram_cts, bigram_denom_cts):
@@ -32,11 +33,11 @@ class BigrammodelKN(Bigrammodel):
         ngram_len = len(bigram_cts.iterkeys().next())
         for bigram in itertools.product(*[ext_labels for i in range(ngram_len)]):
             prevtag, tag = bigram
-            if not prevtag in lambdas or not tag in continuation_cts:
-                trans[bigram] = 0.0
+            if prevtag == self.STOP or tag == self.START:
+                trans[bigram] = 0.0 # these are impossible by design
             else:
-                first_term = max(bigram_cts.get(bigram, 0) - self.delta, 0) / bigram_denom_cts[bigram[:-1]] #discount the term by delta
-                second_term = lambdas[prevtag] * (continuation_cts[tag] / denom_continuations)
+                first_term = max(bigram_cts[bigram] - self.delta, 0.0) / bigram_denom_cts[bigram[:-1]] #discount the term by delta
+                second_term = lambdas[prevtag] * (continuation_cts[tag] / float(denom_continuations))
                 trans[bigram] = first_term + second_term
         return trans
                 
@@ -51,9 +52,7 @@ class BigrammodelKN(Bigrammodel):
         priors = {prevtag : len(contexts) for prevtag, contexts in priors.iteritems() }
         return priors, continuations
         
-    def count_prior(self, bigram_cts):
-        
-        
+            
     def calc_lambdas(self, bigram_denom_cts, prior_cts):
         lambdas = {}
         for tuple_tag, ct in bigram_denom_cts.iteritems():
