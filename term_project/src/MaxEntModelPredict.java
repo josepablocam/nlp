@@ -7,6 +7,7 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Arrays;
+import java.lang.Math;
 
 
 
@@ -54,36 +55,10 @@ class MaxEntModelPredict {
         
         return results;
     }
-    
-    
-   private static double max(double[] probs){
-       double max_val = 0.0;
-
-       for(int i = 0; i < probs.length; i++){
-           if(probs[i] > max_val){
-               max_val = probs[i];
-           }
-       }
-
-       return max_val;
-   }
    
-   private static int which_max(double[] probs){
-       double max_val = 0.0;
-       int max_ix = 0;
-       
-       for(int i = 0; i < probs.length; i++){
-           if(probs[i] > max_val){
-               max_val = probs[i];
-               max_ix = i;
-           }
-       }
-       
-       return max_ix;
-   }
 
-    //Decode 1 sentence using viterbi method
-    public static ArrayList<String> viterbi_decode0(GISModel model, ArrayList<String[]> feat_matrix){
+    //Decode 1 sentence using viterbi method, with a beam of
+    public static ArrayList<String> viterbi_decode0(GISModel model, ArrayList<String[]> feat_matrix, double beam){
         int n_states = model.getNumOutcomes();
         int n_obs = feat_matrix.size();
         int n_feats = feat_matrix.get(0).length;
@@ -91,6 +66,14 @@ class MaxEntModelPredict {
         double[][][] pi = new double[n_obs][n_states + 1][n_states + 1]; //viterbi probabilities, add 1 state for START
         int[][][]    bp = new int[n_obs][n_states + 1][n_states + 1]; //viterbi backpointer, add 1 state for START
         
+        //initialize pi
+        for(int i = 0; i < n_obs; i++) {
+            for(int u = 0; u < n_states + 1; u++) {
+                Arrays.fill(pi[i][u], Double.NEGATIVE_INFINITY);
+            }
+        }
+        
+        //Array of labels with extra labels added
         String[] labels = new String[n_states + 1];
         labels[labels.length - 1] = "START"; //put start special symbol at end
         
@@ -98,6 +81,7 @@ class MaxEntModelPredict {
             labels[i] = model.getOutcome(i); //fill in rest of labels
         }
         
+        //Extended features for first observation
         String[] raw_feats = feat_matrix.get(0); //features for first word in sentence
         String[] ext_feats = new String[n_feats + 2]; //add 2 spaces for previous 2 tags
         System.arraycopy(raw_feats, 0, ext_feats, 0, n_feats);
@@ -106,70 +90,86 @@ class MaxEntModelPredict {
         ext_feats[n_feats + 1] = "tag_i-1=START";
         
         //initial probabilities
-        System.out.println("Initializing probabilities");
         double[] init_probs = model.eval(ext_feats);
+        double beam_base = Double.NEGATIVE_INFINITY;
+            
         for(int v = 0; v < n_states; v++) {
-            pi[0][n_states][v] = init_probs[v]; //v[0]['START'][v]
+            double curr_prob = Math.log10(init_probs[v]); //v[0]['START'][v]
+            pi[0][n_states][v] = curr_prob;
             bp[0][n_states][v] = n_states; //bp[0]['START'][v] = 'START'
+            
+            if(curr_prob > beam_base) {
+                beam_base = curr_prob;
+            }
         }
         
-        //recursive step
-        //TODO: implement prune        
-        System.out.println("Recursive step");
+        double log_beam = Math.log10(beam);
+        
         for(int i = 1; i < n_obs; i++) { //for each observation
-            System.out.println("index:" + i);
             System.arraycopy(feat_matrix.get(i), 0, ext_feats, 0, n_feats);
-            for(int v = 0; v < n_states; v++){ //tag at i
-                for(int u = 0; u < n_states; u++){ //tag at i - 1
-                    ext_feats[n_feats + 1] = "tag_i-1=" + labels[u];
-                    int w_lim = (i == 1) ? n_states + 1 : n_states; //+1 to allow for 'START' when i = 1
-                    double[] probs = new double[w_lim];
-                    for(int w = 0; w < w_lim; w++) {
-                        ext_feats[n_feats] = "tag_i-2=" + labels[w];
-                        if(pi[i-1][w][u] > 0){
-                            probs[w] = model.eval(ext_feats)[v] * pi[i - 1][w][u];
+            int w_lim = (i == 1) ? n_states + 1 : n_states; //+1 to allow for 'START'
+            double[][][] probs = new double[w_lim][n_states][n_states];
+            double curr_max = Double.NEGATIVE_INFINITY;
+            
+            for(int u = 0; u < n_states; u++){ //tag at i - 1
+                ext_feats[n_feats + 1] = "tag_i-1=" + labels[u];
+                for(int w = 0; w < w_lim; w++) {
+                    ext_feats[n_feats] = "tag_i-2=" + labels[w];
+                    if(pi[i - 1][w][u] >= beam_base + log_beam){
+                        //only worth calculating model based on history:w,u if pi value associated with it is within beam
+                        System.arraycopy(model.eval(ext_feats), 0, probs[w][u], 0, n_states); //vector of P(v|w,u)
+                        for(int v = 0; v < n_states; v++) {
+                            double curr_prob = probs[w][u][v] + pi[i - 1][w][u];
+                            if(curr_prob > pi[i][u][v]) {
+                                pi[i][u][v] = curr_prob;
+                                bp[i][u][v] = w;
+                            }
+                            //used to reset beam_base
+                            if(curr_prob > curr_max){
+                                curr_max = curr_prob;
+                            }
                         }
                     }
-                    pi[i][u][v] = max(probs);
-                    bp[i][u][v] = which_max(probs);
-                }
+                } 
             }
+            
+            beam_base = curr_max;
         }
     
 
         //Decode
-        System.out.println("decoding");
+        //System.out.println("decoding");
         ArrayList<String> results = new ArrayList<String>();
         
-        double max_prob = 0.0;
+        double max_prob = Double.NEGATIVE_INFINITY;
         int pred_w = 0, pred_u = 0, pred_v = 0;
         
         //find last 2 states
         for(int v = 0; v < n_states; v++){
             for(int u = 0; u < n_states; u++){
-                if(pi[n_obs - 1][u][v] > max_prob){
-                    max_prob = pi[n_obs - 1][u][v];
+                double curr_prob = pi[n_obs - 1][u][v];
+                if(curr_prob > max_prob){
+                    max_prob = curr_prob;
                     pred_u = u;
                     pred_v = v;
                 }
             }
         }
         
-        results.add(model.getOutcome(pred_v));
-        results.add(model.getOutcome(pred_u));
+        results.add(labels[pred_v]);
+        results.add(labels[pred_u]);
         
         //trace back based on back pointer
         for(int j = n_obs - 1; j >= 2; j--){ //we already decoded last position
             pred_w = bp[j][pred_u][pred_v];
-            results.add(model.getOutcome(pred_w));
+            results.add(labels[pred_w]);
             pred_v = pred_u;
             pred_u = pred_w;
         }
         Collections.reverse(results); //reverse backpointer list to get in order
-        for(String tag: results) {
-            System.out.println(tag);
-        }
-        
+        // for(String tag: results) {
+        //     System.out.println(tag);
+        // }
         
         return results;
     }
@@ -180,22 +180,26 @@ class MaxEntModelPredict {
         ArrayList<String> results = new ArrayList<String>();
         String[] word_features = null;
         ArrayList<String[]> sentence_features = new ArrayList<String[]>();
-
+        int sent_ct = 0;
+        
         for(int i = 0; i < feat_matrix.size(); i++){
             word_features = feat_matrix.get(i);
 
             if(word_features == null) {
-                //Decode 1 sentence, we reached a sentence boundary
-                results.addAll(viterbi_decode0(model, sentence_features));
+                //Decode 1 sentence, we reached a sentence boundary  
+                ArrayList<String> sent_results = viterbi_decode0(model, sentence_features, 0.95);
+                results.addAll(sent_results);
                 results.add(null); //add an empty result to mark boundary
                 sentence_features = new ArrayList<String[]>();  //create new for next sentence to use
+                sent_ct++;
+                System.out.println("done with " + sent_ct);
             } else {
                 sentence_features.add(word_features);
             }
         }
         //The loop above could miss a decode if there is no null at the end
         if(sentence_features.size() != 0) {
-            results.addAll(viterbi_decode0(model, sentence_features));
+            results.addAll(viterbi_decode0(model, sentence_features, 0.95));
         }
         
         return results;
