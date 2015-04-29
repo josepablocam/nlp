@@ -8,26 +8,36 @@ import re
 import tempfile
 import subprocess
 
+#Sample features that perform fairly well for german
+def sample_featlambdas():
+    feats = {}
+    feats["bias"] = lambda word: True
+    feats["word"] = lambda word: word
+    feats["suffix-4"] = lambda word: word[-4:]
+    feats["suffix-3"] = lambda word: word[-3:]
+    feats["suffix-2"] = lambda word: word[-2:]
+    feats["last-letter"] = lambda word: word[-1]
+    feats["firstCaps"] = lambda word: word[0].isupper()
+    feats["has-number"] = lambda word: re.search(r'[0-9]', word) != None
+    feats["is-long-word"] = lambda word: len(word) > 6
+    return feats
 
 class Maxentmodel:
-    def __init__(self, labels):
+    def __init__(self, labels, featlambdas = None):
         self.labels = labels
         self.model_path = None
         self.START = 'START'
-        self.LONGWORDLEN = 6
         self.OPENNLPCLASSPATH="/usr/local/jet/jet-all.jar:."
-    
+        self.featlambdas = featlambdas
+        if featlambdas == None:
+            self.featlambdas = sample_featlambdas()
+        
     def feat_map(self, word, prev_tag, prev_tag2):
         features = {}
-        features["bias"] = True
-        features["word"] = word
-        features["suffix-4"] = word[-4:]
-        features["suffix-3"] = word[-3:]
-        features["suffix-2"] = word[-2:]
-        features["last-letter"] = word[-1]
-        features["firstCaps"] = word[0].isupper()
-        features["has-number"] = re.search(r'[0-9]', word) != None
-        features["is-long-word"] = len(word) > self.LONGWORDLEN
+        for feat_name, fun in self.featlambdas.iteritems():
+            features[feat_name] = fun(word)
+        #previous 2 tags are always included regardless of desired
+        #freatures, since we use it to decode the sequence
         if prev_tag != None and prev_tag2 != None:
             features["tag_i-1"] = prev_tag
             features["tag_i-2"] = prev_tag2
@@ -91,7 +101,7 @@ class Maxentmodel:
         return corpus_results
     
         
-    def tag_corpus(self, corpus, method = "greedy"):
+    def tag_corpus(self, corpus, method = "greedy", beam = 1.0):
         if self.model_path == None:
             raise ValueError("Missing a model path, train!")
             
@@ -106,8 +116,11 @@ class Maxentmodel:
             feat_file.write("\n") #blank line after every sentence
         feat_file.flush() #make sure it is all written out
         result_file = tempfile.NamedTemporaryFile(mode="r+w")
-        print "Calling java MaxEntModelPredict to tag sentence"
-        failure = subprocess.call(['java', '-cp', self.OPENNLPCLASSPATH, 'MaxEntModelPredict', self.model_path, feat_file.name, result_file.name, "-" + method])
+        print "Calling java MaxEntModelPredict to tag sentence with decoding: %s" % method
+        java_cmd = ['java', '-cp', self.OPENNLPCLASSPATH, 'MaxEntModelPredict', self.model_path, feat_file.name, result_file.name, "-" + method]
+        if method == "viterbi":
+           java_cmd.append(str(beam))
+        failure = subprocess.call(java_cmd)
         results = []
         if not failure:
             corpus_tags = self.read_results(result_file)
