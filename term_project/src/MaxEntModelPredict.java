@@ -26,21 +26,21 @@ class MaxEntModelPredict {
         String tag = null;
         String prev_tag = "START";
         String prev_tag2 = "START";
-        
+        int n_feats = feat_matrix.get(0).length;
+        String[] ext_feats = new String[n_feats + 2]; //we will add 2 more features, the previous 2 tags!
         
         for(String[] raw_feats : feat_matrix)
         {
             if(raw_feats != null)
             {   
-                ArrayList<String> ext_feats = new ArrayList<String>(Arrays.asList(raw_feats));
+                System.arraycopy(raw_feats, 0, ext_feats, 0, n_feats);
         
                 //add 2 prior tags as features
-                ext_feats.add("tag_i-1=" + prev_tag);
-                ext_feats.add("tag_i-2=" + prev_tag2);
+                ext_feats[n_feats] = "tag_i-2=" + prev_tag2;
+                ext_feats[n_feats + 1] = "tag_i-1=" + prev_tag;
                 
                 //predict and store
-                String[] feats = ext_feats.toArray(new String[ext_feats.size()]);
-                tag = model.getBestOutcome(model.eval(feats));
+                tag = model.getBestOutcome(model.eval(ext_feats));
                 results.add(tag);
                 
                 //move tags to account for i
@@ -57,7 +57,7 @@ class MaxEntModelPredict {
     }
    
 
-    //Decode 1 sentence using viterbi method, with a beam of
+    //Decode 1 sentence using viterbi method
     public static ArrayList<String> viterbi_decode0(GISModel model, ArrayList<String[]> feat_matrix, double beam){
         int n_states = model.getNumOutcomes();
         int n_obs = feat_matrix.size();
@@ -66,7 +66,7 @@ class MaxEntModelPredict {
         double[][][] pi = new double[n_obs][n_states + 1][n_states + 1]; //viterbi probabilities, add 1 state for START
         int[][][]    bp = new int[n_obs][n_states + 1][n_states + 1]; //viterbi backpointer, add 1 state for START
         
-        //initialize pi
+        //initialize pi to negative infinity for all states
         for(int i = 0; i < n_obs; i++) {
             for(int u = 0; u < n_states + 1; u++) {
                 Arrays.fill(pi[i][u], Double.NEGATIVE_INFINITY);
@@ -90,8 +90,8 @@ class MaxEntModelPredict {
         ext_feats[n_feats + 1] = "tag_i-1=START";
         
         //initial probabilities
-        double[] init_probs = model.eval(ext_feats);
-        double beam_base = Double.NEGATIVE_INFINITY;
+        double[] init_probs = model.eval(ext_feats); //probability of each v given START,START
+        double beam_base = Double.NEGATIVE_INFINITY; //start out as lowest possible value
             
         for(int v = 0; v < n_states; v++) {
             double curr_prob = Math.log10(init_probs[v]); //v[0]['START'][v]
@@ -106,21 +106,21 @@ class MaxEntModelPredict {
         double log_beam = Math.log10(beam);
         
         for(int i = 1; i < n_obs; i++) { //for each observation
-            System.arraycopy(feat_matrix.get(i), 0, ext_feats, 0, n_feats);
-            int w_lim = (i == 1) ? n_states + 1 : n_states; //+1 to allow for 'START'
-            double[][][] probs = new double[w_lim][n_states][n_states];
-            double curr_max = Double.NEGATIVE_INFINITY;
+            System.arraycopy(feat_matrix.get(i), 0, ext_feats, 0, n_feats); //copy the features to our extended feature vector
+            int w_lim = (i == 1) ? n_states + 1 : n_states; //+1 to allow for 'START' when i = 1
+            double[][][] probs = new double[w_lim][n_states][n_states]; //probs[w][u][v]
+            double curr_max = Double.NEGATIVE_INFINITY; //maximum probability associated with a sequence up to obs i
             
             for(int u = 0; u < n_states; u++){ //tag at i - 1
                 ext_feats[n_feats + 1] = "tag_i-1=" + labels[u];
                 for(int w = 0; w < w_lim; w++) {
                     ext_feats[n_feats] = "tag_i-2=" + labels[w];
                     if(pi[i - 1][w][u] >= beam_base + log_beam){
-                        //only worth calculating model based on history:w,u if pi value associated with it is within beam
-                        System.arraycopy(model.eval(ext_feats), 0, probs[w][u], 0, n_states); //vector of P(v|w,u)
-                        for(int v = 0; v < n_states; v++) {
-                            double curr_prob = probs[w][u][v] + pi[i - 1][w][u];
-                            if(curr_prob > pi[i][u][v]) {
+                        //only worth calculating model based on history:w,u if pi value is within beam
+                        System.arraycopy(model.eval(ext_feats), 0, probs[w][u], 0, n_states); //vector of P(v|w,u) for each v
+                        for(int v = 0; v < n_states; v++) { //iterate through predicted values
+                            double curr_prob = Math.log10(probs[w][u][v]) + pi[i - 1][w][u]; //note must convert model probs to log base
+                            if(curr_prob > pi[i][u][v]) { //find max and argmax for u,v
                                 pi[i][u][v] = curr_prob;
                                 bp[i][u][v] = w;
                             }
@@ -138,7 +138,6 @@ class MaxEntModelPredict {
     
 
         //Decode
-        //System.out.println("decoding");
         ArrayList<String> results = new ArrayList<String>();
         
         double max_prob = Double.NEGATIVE_INFINITY;
@@ -156,6 +155,7 @@ class MaxEntModelPredict {
             }
         }
         
+        //resolve the actual tag names before adding, by using the labels array
         results.add(labels[pred_v]);
         results.add(labels[pred_u]);
         
@@ -167,39 +167,37 @@ class MaxEntModelPredict {
             pred_u = pred_w;
         }
         Collections.reverse(results); //reverse backpointer list to get in order
-        // for(String tag: results) {
-        //     System.out.println(tag);
-        // }
-        
         return results;
     }
 
     
-    //decode an entire document using viterbi,calls viterbi_decode0 on each sentence
-    public static ArrayList<String> viterbi_decode(GISModel model, ArrayList<String[]> feat_matrix) {
+    //decode an entire document using viterbi, calls viterbi_decode0 on each sentence
+    public static ArrayList<String> viterbi_decode(GISModel model, ArrayList<String[]> feat_matrix, double beam) {
         ArrayList<String> results = new ArrayList<String>();
         String[] word_features = null;
         ArrayList<String[]> sentence_features = new ArrayList<String[]>();
         int sent_ct = 0;
+        int feat_matriz_size = feat_matrix.size();
         
-        for(int i = 0; i < feat_matrix.size(); i++){
+        
+        for(int i = 0; i < feat_matriz_size; i++){
             word_features = feat_matrix.get(i);
 
             if(word_features == null) {
                 //Decode 1 sentence, we reached a sentence boundary  
-                ArrayList<String> sent_results = viterbi_decode0(model, sentence_features, 0.95);
+                ArrayList<String> sent_results = viterbi_decode0(model, sentence_features, beam);
                 results.addAll(sent_results);
                 results.add(null); //add an empty result to mark boundary
-                sentence_features = new ArrayList<String[]>();  //create new for next sentence to use
+                sentence_features = new ArrayList<String[]>();  //create new container for next sentence to use
                 sent_ct++;
-                System.out.println("done with " + sent_ct);
+                System.out.println("Processed: " + sent_ct + " sentences"); //let user know how many sentences so far, in case too slow
             } else {
                 sentence_features.add(word_features);
             }
         }
         //The loop above could miss a decode if there is no null at the end
         if(sentence_features.size() != 0) {
-            results.addAll(viterbi_decode0(model, sentence_features, 0.95));
+            results.addAll(viterbi_decode0(model, sentence_features, beam));
         }
         
         return results;
@@ -208,13 +206,13 @@ class MaxEntModelPredict {
 
     public static void usage()
     {
-        System.out.println("MaxEndModelTest usage: <gis_model_file> <feature_txt_file> <result_file> <-greedy|-viterbi>");
+        System.out.println("MaxEndModelTest usage: <gis_model_file> <feature_txt_file> <result_file> <-greedy|-viterbi [beam_factor]>");
     }
     
     public static void main(String[] argv)
     {
         //Test to make sure that command line options are ok
-        if(argv.length != 4)
+        if(argv.length < 4)
         {
             MaxEntModelPredict.usage();
             System.exit(1);
@@ -268,12 +266,25 @@ class MaxEntModelPredict {
         }
         
         //model predictions
+        String decode_method = argv[3];
+        
         ArrayList<String> predicted_tags = new ArrayList<String>();
-        if(argv[3].equals("-greedy"))
+        if(decode_method.equals("-greedy"))
          {
             predicted_tags = greedy_decode(model, feature_matrix); 
-        } else if (argv[3].equals("-viterbi")){
-            predicted_tags = viterbi_decode(model, feature_matrix);
+            
+        } else if(decode_method.equals("-viterbi")){
+            //If we don't get a beam size, we assume this means it is
+            //simple viterbi...takes a long time though!!!
+            double beam_factor = 1.0;
+            
+            if(argv.length == 5)
+            {
+                beam_factor = Double.parseDouble(argv[4]); //user provided beam factor, use that
+            }
+        
+            predicted_tags = viterbi_decode(model, feature_matrix, beam_factor);
+            
         } else {
             System.out.println("method " + argv[3] + " nyi");
             System.exit(1);
@@ -287,7 +298,7 @@ class MaxEntModelPredict {
                 if(tag != null){
                     writer.println(tag);
                 } else {
-                    writer.println();
+                    writer.println(); //blank line separate sentences
                 }
             }
 
