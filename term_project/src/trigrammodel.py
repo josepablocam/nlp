@@ -17,7 +17,7 @@ class Trigrammodel(Ngrammodel):
     def train(self, corpus):
         Ngrammodel.train(self, 3, corpus)
     
-    ##TODO: reduce our search space!!!
+    
     def tag_sent(self, sentence):
         pi = defaultdict(lambda: float('nan')) 
         pi[(-1, self.START, self.START)] = log(1) # viterbi probability initialize
@@ -52,7 +52,10 @@ class Trigrammodel(Ngrammodel):
         #decode
         u, v = max({(u, v) : p for (s, u , v), p in pi.iteritems() if s == s_len - 1 and not isnan(p)}.iteritems(), key = lambda x: x[1])[0] #predict last 2 tags
         #trace pointer for remaining predictions
-        predicted = [ v, u] # create array of predictions, remember reverse order
+        predicted = [ v ] # create array of predictions, remember reverse order
+        if s_len > 1:
+            predicted.append(u) #only add other label if sentence longer than 1
+            
         for i in range(s_len - 1, 1, -1):
             w = bp[(i, u, v)]
             predicted.append(w)
