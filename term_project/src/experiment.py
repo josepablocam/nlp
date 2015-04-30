@@ -1,13 +1,12 @@
-#utilities
+#Author: Jose Cambronero (N17381190)
+#jpc485@nyu.edu
+#Spring 2015 NLP Term Project
+
+################ Utilities ###############################################################
 from tigerutil import *
 import os
 import random
 import re
-
-#model implementations
-from bigrammodelkn import * 
-from trigrammodel import *
-from maxentmodel import *
 
 ##additional utilities useful for experiments
 def rem_tags(corpus):    
@@ -23,36 +22,63 @@ def accuracy(confusion_matrix):
     
 #create a path from a string
 def str_to_path(nm, sep, ext):
-    return "_".join([e for e in nm.split(sep) if len(e) > 0]) + "." + ext
-
+    return "_".join([e for e in nm.split(sep) if len(e) > 0]) + ext
+   
 #identify if a model name is associated with a maximum entropy model (these require some additional parameters, to store model and decode)
-is_maxent = lambda x: re.search(r'maxent', name) != None
+def is_maxent(model_name):
+     return re.search(r'maxent', name) != None 
 
-###our data
+################ Model Implementations ###################################################
+from bigrammodel import * #2-gram laplace smoothing
+from bigrammodelkn import *  #2-gram KN smoothing
+from trigrammodel import * #3-gram laplace smoothing
+from maxentmodel import * #maximum entropy model
+
+
+
+################ Tiger Corpus Data ######################################################
 print "Reading in the tiger corpus"
-doc = tigertsv_to_list("/Users/josecambronero/MS/S15/nlp/term_project/data/corpus/tiger_release_july03.tsv")
-##set our seed
+doc = tigertsv_to_list("../data/corpus/tiger_release_july03.tsv")
 random.seed(100)  # we pick a deterministic seed for reproducibility
-##shuffle our data
-random.shuffle(doc)
-labels = list(set([tag for sent in doc for word,tag in sent]))
+random.shuffle(doc) ##shuffle our data
+labels = list(set([tag for sent in doc for word,tag in sent])) #extract labels in all data
 
 ##Our training and testing data split parameters
 print "Separating data into training and testing corpus"
 trainpct = 0.7
+devpct = 0.15
+testpct = 0.15
+
+#Training set
 trainix = int(len(doc) * trainpct)
-devdat = doc[:trainix] # we train on this
-testdat = doc[trainix: ] #we report this
+traindat = doc[:trainix] # we train on this
+
+#Development set
+devix = trainix + int(len(doc) * devpct)
+devdat = doc[trainix:devix]
+devdat_no_tags = rem_tags(devdat)
+
+#Test set
+testdat = doc[devix: ] #we report this
 testdat_no_tags = rem_tags(testdat)
 
-#we define a smarter morphologically based unknown word tagger, given knowledge of german and suffix distribution analysis
+
+
+
+################################ HMM handling of unknown words ###########################
+#Strategy 1: simple UNKNOWN
+def simple_unknown(x):
+    return 'UNKNOWN'
+
+#Strategy 2: smarter, morphologically based unknown word tagger
+#given knowledge of german and suffix distribution analysis
 #see datadist.q
-noun_regex = r'(keit|heit|ung|onie)$' #at end
+noun_regex = r'(eit|eit|ung|onie)$' #at end
 verb_regex = r'en$' #at end
 adj_regex = r'(ich|isch|ig)' #note not necessarily at end, deklination
 num_regex = r'[0-9]'
 
-def smarter_suffix(word):
+def  morpho_unknown(word):
      if re.search(noun_regex, word):
          return "NN"
      elif re.search(verb_regex, word):
@@ -65,73 +91,100 @@ def smarter_suffix(word):
          return "UNKNOWN"
 
 
+################################ Maxent feature sets ###########################
+#All our maxent models include by default the previous 2 tags as features, 
+#so any features listed below are in addition to those
+
+
+
+
+
+################################ Model Creation ##########################################
+
 ##We create a dictionary that keeps an instance of each of our models
+##We train each of them separately (which might be a bit inefficient, but simple)
 print "Creating models"
 models = {}
-models["bigram kn simple unknown agg 3"] = BigrammodelKN(labels, lambda x: "UNKNOWN", 3)
-models["trigram laplace simple unknown agg 3"] = Trigrammodel(labels, lambda x: "UNKNOWN", 3)
-models["bigram kn simple morpho agg 3"] = BigrammodelKN(labels, smarter_suffix, 3)
-models["trigram laplace simple morpho agg 3"] = Trigrammodel(labels, smarter_suffix, 3)
-models["simple maxent model"] = Maxentmodel(labels, {'word' : lambda x: x}) #solely consider word and previous 2 tags (these are added by the class)
-models["robust maxent model"] = Maxentmodel(labels) #use default features, which perform well
+#bigram models using unknown word strategy 1
+models["bigram kn s1 3"] = BigrammodelKN(labels, simple_unknown, 3)
+models["bigram kn s1 6"] = BigrammodelKN(labels, simple_unknown, 6)
+models["bigram lp s1 3"] = Bigrammodel(labels, simple_unknown, 3)
+models["bigram lp s1 6"] = Bigrammodel(labels, simple_unknown, 6)
+#bigram models using unknown word strategy 2
+models["bigram kn s2 3"] = BigrammodelKN(labels, morpho_unknown, 3)
+models["bigram kn s2 6"] = BigrammodelKN(labels, morpho_unknown, 6)
+models["bigram lp s2 3"] = Bigrammodel(labels, morpho_unknown, 3)
+models["bigram lp s2 6"] = Bigrammodel(labels, morpho_unknown, 6)
+#trigram models using unknown word strategy 1
+models["trigram lp s1 3"] = Trigrammodel(labels, simple_unknown, 3)
+models["trigram lp s1 6"] = Trigrammodel(labels, simple_unknown, 6)
+#trigram models using unknown word strategy 2
+models["trigram lp s2 3"] = Trigrammodel(labels, morpho_unknown, 3)
+models["trigram lp s2 6"] = Trigrammodel(labels, morpho_unknown, 6)
+#maxent model feature set 1 
+models["maxent f1"] = Maxentmodel(labels, feat_set1)
+#maxent model feature set 2
+models["maxent f2"] = Maxentmodel(labels, feat_set2)
+#maxent model feature set 3
+models["maxent f3"] = Maxentmodel(labels, feat_st3)
 
 
-
+################ Model Training ##########################################################
 ##train the models, we can afford to retrain the maxentmodel whenever we want, since the underlying implementation 
 #calls a fast java trainer
-for name, model in models.iteritems():
-    print "Training %s" % name
-    if is_maxent(name):
-        model_path = str_to_path(name, " ", ".txt")
-        model.train(devdat, model_path)
-    else:
-        model.train(devdat)
+def train_models(models):
+    for name, model in models.iteritems():
+        print "Training %s" % name
+        if is_maxent(name):
+            model_path = str_to_path(name, " ", ".txt")
+            model.train(devdat, model_path)
+        else:
+            model.train(devdat)
     
-###Now tag the test data and store results
-testdat_no_tags = rem_tags(testdat)
-results = { }
 
-##this will take a while, go grab coffee....
-BEAM_FACTOR = 0.75
-for name, model in models.iteritems():
-    print "Tagging with %s" % name
-    if  is_maxent(name): #for maxent models try both greedy and beam with low threshold
-        results[name + " greedy"] = model.tag_corpus(testdat_no_tags, method = "greedy")
-        results[name + " beam"] = model.tag_corpus(testdat_no_tags, method = "viterbi", beam = BEAM_FACTOR)
-    else:
-       results[name] = model.tag_corpus(testdat_no_tags)
+train_models(models)
 
-###write out confusion matrix as a simple csv table so we can analyze errors in q
-###which is faster and easier with sql-like syntax
-results_file = open("model_results.csv", "w")
-results_file.write("model, observed, predicted,freq\n")
-calc_matrix = Ngrammodel(labels, lambda x: x).confusion_matrix_corpus #just a dummy to calculate matrix
-for name, result in results.iteritems():
-    clean_model_name = "_".join([e for e in name.split(" ") if len(e) > 0])
-    confusion_matrix = calc_matrix(testdat, result)
-    for (observed, predicted), cts in confusion_matrix.iteritems():
-        results_file.write("%s, %s, %s, %f\n" % (clean_model_name, observed, predicted, cts))
-    print "%s Accuracy: %f" % (name, accuracy(confusion_matrix))
+################ Tag development set######################################################
+BEAM_RANGE = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+def test_models(models, tagged_corpus, result_path):
+    results = { }
+    untagged_corpus = rem_tags(tagged_corpus)
+    #run models
+    for name, model in models.iteritems():
+        print "Tagging with %s" % name
+        if is_maxent(name): #for maxent models try both greedy and beam with low threshold
+            results[name + " greedy"] = model.tag_corpus(untagged_corpus, method = "greedy")
+            for beam in BEAM_RANGE:
+                results[name + " beam"+beam] = model.tag_corpus(untagged_corpus, method = "viterbi", beam = beam)
+        else:
+            results[name] = model.tag_corpus(untagged_corpus)   
+    #write out results
+    results_file = open(result_path, "w")
+    results_file.write("model\tobserved\tpredicted\tfreq\n")
+    calc_matrix = Ngrammodel(labels, lambda x: x).confusion_matrix_corpus #just a dummy to calculate matrix
+    for name, result in results.iteritems():
+        clean_model_name = "_".join([e for e in name.split(" ") if len(e) > 0])
+        confusion_matrix = calc_matrix(tagged_corpus, result)
+        for (observed, predicted), cts in confusion_matrix.iteritems():
+            results_file.write("%s\t%s\t%s\t%f\n" % (clean_model_name, observed, predicted, cts))
+        print "%s Accuracy: %f" % (name, accuracy(confusion_matrix))
+    results_file.close()
 
-results_file.close()
+
+test_models(models, devdat, "../results/dev_results.tsv")
 
 
-        
+################ Test set ################################################################
+#Based on results from the development set, we pick the best models in each class and
+best_models_names = []
+best_models = {}
+for name in best_models_names:
+    best_models[name] = models[name]
 
-tags_by_model = defaultdict(set)
-for model_name, model_results in results.iteritems():
-    for sent in model_results:
-        for word, tag in sent:
-            tags_by_model[model_name].add(tag)
-            
-            
-model_name = 'trigram laplace simple morpho agg 3'
-explore = results[model_name]
-for sent in explore:
-    tags = [tag for word,tag in sent]
-    if 'START' in tags:
-        sent
+test_models(best_models, testdat, "../results/test_results.tsv")
 
-    
+
+
+
 
 
