@@ -223,9 +223,9 @@ def confusion_matrix_by_oov(models, model_results, tagged_corpus, train_corpus, 
                 results[(clean_model_name, observed, predicted, is_oov)] += 1
     print "writing out results to %s" % result_path
     results_file = open(result_path, "w")
-    results_file.write("model\tobserved\tpredicted\voov\freq\n")
+    results_file.write("model\tobserved\tpredicted\toov\tfreq\n")
     for (model_name, observed, predicted, is_oov),freq in results.iteritems():
-        results_file.write("%s\t%s\t%s\t%d\t%d\n") % (model_name, observed, predicted, 1 if is_oov else 0, freq)
+        results_file.write("%s\t%s\t%s\t%d\t%d\n" % (model_name, observed, predicted, 1 if is_oov else 0, freq))
     return results
             
         
@@ -233,7 +233,7 @@ def confusion_matrix_by_oov(models, model_results, tagged_corpus, train_corpus, 
 #this takes a long time....go grab coffee :)
 dev_beams = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
 dev_results = test_models(models, devdat, dev_beams,  "../results/dev_results.tsv")
-dev_oov = oov_calc(models, dev_results, devdat, traindat, ".../results/dev_oov.tsv")
+dev_oov = confusion_matrix_by_oov(models, dev_results, devdat, traindat, "../results/dev_oov.tsv")
 
 ################ Tag test set ############################################################
 #Based on results from the development set, we pick the best models in each class and
