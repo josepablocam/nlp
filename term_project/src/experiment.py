@@ -3,12 +3,18 @@
 #Spring 2015 NLP Term Project
 
 ################ Utilities ###############################################################
-from tigerutil import *
+from utils.tigerutil import *
 import os
 import random
 import re
 import collections
 import subprocess
+
+## global variables
+DATAPATH = "../data/"
+RESULTPATH = "../results/"
+MODELPATH = "./models/"
+
 
 ##additional utilities useful for experiments
 def rem_tags(corpus):    
@@ -33,15 +39,15 @@ def is_maxent(model_name):
      return re.search(r'maxent', model_name) != None 
 
 ################ Model Implementations ###################################################
-from bigrammodel import * #2-gram laplace smoothing
-from bigrammodelkn import *  #2-gram KN smoothing
-from trigrammodel import * #3-gram laplace smoothing
-from maxentmodel import * #maximum entropy model
+from models.bigrammodel import * #2-gram laplace smoothing
+from models.bigrammodelkn import *  #2-gram KN smoothing
+from models.trigrammodel import * #3-gram laplace smoothing
+from models.maxentmodel import * #maximum entropy model
 
 
 ################ Tiger Corpus Data ######################################################
 print "Reading in the tiger corpus"
-doc = tigertsv_to_list("../data/corpus/tiger_release_july03.tsv")
+doc = tigertsv_to_list(DATAPATH + "/corpus/tiger_release_july03.tsv")
 random.seed(100)  # we pick a deterministic seed for reproducibility
 random.shuffle(doc) ##shuffle our data
 labels = list(set([tag for sent in doc for word,tag in sent])) #extract labels in all data
@@ -100,6 +106,7 @@ def morpho_unknown(word):
 ################################ Maxent feature sets ###########################
 #All our maxent models include by default the previous 2 tags as features, 
 #so any features listed below are in addition to those
+
 def feat_set1():
     feats = {}
     feats["word"] = lambda word: word
@@ -111,6 +118,8 @@ def feat_set1():
     feats["is-long-word"] = lambda word: len(word) > 6
     return feats
  
+ 
+
 #removes last-letter feature and adds prefixes, all caps, and hyphen feature
 def feat_set2():
     feats = feat_set1()
@@ -173,7 +182,7 @@ def train_models(models, tagged_corpus):
     for name, model in models.iteritems():
         print "Training %s" % name
         if is_maxent(name):
-            model_path = str_to_path(name, " ", ".txt")
+            model_path = MODELPATH + str_to_path(name, " ", ".txt")
             model.train(tagged_corpus, model_path)
         else:
             model.train(tagged_corpus)
@@ -243,8 +252,8 @@ def confusion_matrix_by_oov(models, model_results, tagged_corpus, train_corpus, 
 
 #this takes a long time....go grab coffee :)
 dev_beams = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
-dev_results = test_models(models, devdat, dev_beams,  "../results/dev_results.tsv")
-dev_oov = confusion_matrix_by_oov(models, dev_results, devdat, traindat, "../results/dev_oov.tsv")
+dev_results = test_models(models, devdat, dev_beams,  RESULTPATH + "dev_results.tsv")
+dev_oov = confusion_matrix_by_oov(models, dev_results, devdat, traindat, RESULTPATH + "dev_oov.tsv")
 
 ################ Tag test set ############################################################
 #Based on results from the development set, we pick the best models in each class and
@@ -254,8 +263,8 @@ for name in best_models_names:
     best_models[name] = models[name]
 
 opt_beam = [ 0.5 ]
-test_results = test_models(best_models, testdat, opt_beam, "../results/test_results.tsv")
-test_oov = confusion_matrix_by_oov(best_models, test_results, testdat, traindat, "../results/test_oov.tsv")
+test_results = test_models(best_models, testdat, opt_beam, RESULTPATH + "test_results.tsv")
+test_oov = confusion_matrix_by_oov(best_models, test_results, testdat, traindat, RESULTPATH + "test_oov.tsv")
 
 ####   Create final maximum entropy model based on confusion matrix and additional features #######
 def feat_set3():
@@ -275,16 +284,17 @@ final_results = last_maxent.tag_corpus(rem_tags(testdat), method = "viterbi", be
 ################ Compare performance with OpenNLP results ################################
 #write out test data
 import codecs
-test_file = codecs.open("../data/opennlp_test_data.txt", "w", encoding="latin1")
+test_file = codecs.open(DATAPATH + "opennlp_test_data.txt", "w", encoding="latin1")
 for sent in rem_tags(testdat):
     test_file.write(" ".join(sent) + "\n")
 
     
 test_file.close()
 #call ME model
-subprocess.call("cat ../data/opennlp_test_data.txt | opennlp POSTagger de-pos-maxent.bin > ../results/opennlp_maxent_results.txt", shell = True)
+subprocess.call(["cat",  DATAPATH + "opennlp_test_data.txt", "| opennlp POSTagger de-pos-maxent.bin >", RESULTPATH + "opennlp_maxent_results.txt"])
 #call Perceptron model
-subprocess.call("cat ../data/opennlp_test_data.txt | opennlp POSTagger de-pos-perceptron.bin > ../results/opennlp_perceptron_results.txt", shell = True)
+subprocess.call(["cat",  DATAPATH + "opennlp_test_data.txt", "| opennlp POSTagger de-pos-perceptron.bin >", RESULTPATH + "opennlp_perceptron_results.txt"])
+
 
 
 def opennlp_read_results(path):
@@ -297,8 +307,8 @@ def opennlp_read_results(path):
     return results
         
 calc_matrix = Ngrammodel(labels, lambda x: x).confusion_matrix_corpus #just a dummy to calculate matrix
-opennlp_maxent = opennlp_read_results("../results/opennlp_maxent_results.txt")
-opennlp_perceptron = opennlp_read_results("../results/opennlp_perceptron_results.txt")
+opennlp_maxent = opennlp_read_results(RESULTPATH + "opennlp_maxent_results.txt")
+opennlp_perceptron = opennlp_read_results(RESULTPATH + "opennlp_perceptron_results.txt")
 
 print "opennlp maxent accuracy: %f" % accuracy(calc_matrix(testdat, opennlp_maxent))
 print "opennlp perceptron accuracy: %f" % accuracy(calc_matrix(testdat, opennlp_perceptron))
