@@ -1,0 +1,10 @@
+Author: Jose Cambronero
+jpc485@nyu.edu
+
+This represents all source files, data and results involved in completion of the term project for NLP Spring 2015: A survey and implemention of POS taggers for German.
+
+If you would like to use any of the source code, we suggest:
+1 - change the classpath for jet/opennlp in src/Makefile
+2 - change self.OPENNLPCLASSPATH at line 30 of /Users/josecambronero/MS/S15/nlp/term_project/src/models/maxentmodel.py
+2 - call make in the src folder
+3 - call python and execute experiment.py

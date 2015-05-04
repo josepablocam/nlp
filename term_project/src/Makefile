@@ -1,13 +1,12 @@
-MODELPATH="./models/"
 CP="/usr/local/jet/jet-all.jar:."
 
-all: javatrain javapredict
+all:javatrain javapredict
 
-javatrain: MaxEntModelTrain.java
-	javac -cp ${CP} "${MODELPATH}MaxEntModelTrain.java"
+javatrain:./models/MaxEntModelTrain.java
+	javac -cp ${CP} ./models/MaxEntModelTrain.java
 
-javapredict: MaxEntModelPredict.java
-	javac -cp ${CP} "${MODELPATH}MaxEntModelPredict.java"
+javapredict:./models/MaxEntModelPredict.java
+	javac -cp ${CP} ./models/MaxEntModelPredict.java
 
-clean:rm "${MODELPATH}.class"
+clean:rm ./models/*.class
 
