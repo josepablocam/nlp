@@ -8,6 +8,7 @@ import os
 import random
 import re
 import collections
+import subprocess
 
 ##additional utilities useful for experiments
 def rem_tags(corpus):    
@@ -127,37 +128,47 @@ def feat_set2():
 ##We train each of them separately (which might be a bit inefficient, but simple)
 print "Creating models"
 models = {}
-#bigram models using unknown word strategy 1
-#delta 0f 0.75 for kneser ney discount
-models["bigram kn s1 3 d 0.75"] = BigrammodelKN(labels, simple_unknown, 3, delta = 0.75)
-models["bigram kn s1 6 d 0.75"] = BigrammodelKN(labels, simple_unknown, 6, delta = 0.75)
-models["bigram kn s1 3 d 0.5"] = BigrammodelKN(labels, simple_unknown, 3, delta = 0.5)
-models["bigram kn s1 6 d 0.5"] = BigrammodelKN(labels, simple_unknown, 6, delta = 0.5)
-models["bigram lp s1 3"] = Bigrammodel(labels, simple_unknown, 3)
-models["bigram lp s1 6"] = Bigrammodel(labels, simple_unknown, 6)
-#bigram models using unknown word strategy 2
-models["bigram kn s2 3 d 0.75"] = BigrammodelKN(labels, morpho_unknown, 3, delta = 0.75)
-models["bigram kn s2 6 d 0.75"] = BigrammodelKN(labels, morpho_unknown, 6, delta = 0.75)
-models["bigram kn s2 3 d 0.5"] = BigrammodelKN(labels, morpho_unknown, 3, delta = 0.5)
-models["bigram kn s2 6 d 0.5"] = BigrammodelKN(labels, morpho_unknown, 6, delta = 0.5)
-models["bigram lp s2 3"] = Bigrammodel(labels, morpho_unknown, 3)
-models["bigram lp s2 6"] = Bigrammodel(labels, morpho_unknown, 6)
-#trigram models using unknown word strategy 1
-models["trigram lp s1 3"] = Trigrammodel(labels, simple_unknown, 3)
-models["trigram lp s1 6"] = Trigrammodel(labels, simple_unknown, 6)
-#trigram models using unknown word strategy 2
-models["trigram lp s2 3"] = Trigrammodel(labels, morpho_unknown, 3)
-models["trigram lp s2 6"] = Trigrammodel(labels, morpho_unknown, 6)
-#maxent model feature set 1 
+#----->bigram models using unknown word strategy 1
+#delta of 0.33 for kneser ney discount
+models["2gram kn-0.33 s1 3"] = BigrammodelKN(labels, simple_unknown, 3, delta = 0.33)
+models["2gram kn-0.33 s1 6"] = BigrammodelKN(labels, simple_unknown, 6, delta = 0.33)
+#delta of 0.16 for kneser ney discount
+models["2gram kn-0.16 s1 3"] = BigrammodelKN(labels, simple_unknown, 3, delta = 0.16)
+models["2gram kn-0.16 s1 6"] = BigrammodelKN(labels, simple_unknown, 6, delta = 0.16)
+#delta of 0.5 for kneser ney discount
+models["2gram kn-0.5 s1 3"] = BigrammodelKN(labels, simple_unknown, 3, delta = 0.5)
+models["2gram kn-0.5 s1 6"] = BigrammodelKN(labels, simple_unknown, 6, delta = 0.5)
+#laplace smoothing
+models["2gram lp s1 3"] = Bigrammodel(labels, simple_unknown, 3)
+models["2gram lp s1 6"] = Bigrammodel(labels, simple_unknown, 6)
+#----->bigram models using unknown word strategy 2
+#delta of 0.33 for kneser ney discount
+models["2gram kn-0.33 s2 3"] = BigrammodelKN(labels, morpho_unknown, 3, delta = 0.33)
+models["2gram kn-0.33 s2 6"] = BigrammodelKN(labels, morpho_unknown, 6, delta = 0.33)
+#delta of 0.16 for kneser ney discount
+models["2gram kn-0.16 s2 3"] = BigrammodelKN(labels, morpho_unknown, 3, delta = 0.16)
+models["2gram kn-0.16 s2 6"] = BigrammodelKN(labels, morpho_unknown, 6, delta = 0.16)
+#delta of 0.5 for kneser ney discount
+models["2gram kn-0.5 s2 3"] = BigrammodelKN(labels, morpho_unknown, 3, delta = 0.5)
+models["2gram kn-0.5 s2 6"] = BigrammodelKN(labels, morpho_unknown, 6, delta = 0.5)
+#laplace smoothing
+models["2gram lp s2 3"] = Bigrammodel(labels, morpho_unknown, 3)
+models["2gram lp s2 6"] = Bigrammodel(labels, morpho_unknown, 6)
+#----->trigram models using unknown word strategy 1
+models["3gram lp s1 3"] = Trigrammodel(labels, simple_unknown, 3)
+models["3gram lp s1 6"] = Trigrammodel(labels, simple_unknown, 6)
+#----->trigram models using unknown word strategy 1
+models["3gram lp s2 3"] = Trigrammodel(labels, morpho_unknown, 3)
+models["3gram lp s2 6"] = Trigrammodel(labels, morpho_unknown, 6)
+#----->maxent model feature set 1 
 models["maxent f1"] = Maxentmodel(labels, feat_set1())
-#maxent model feature set 2
+#----->maxent model feature set 2
 models["maxent f2"] = Maxentmodel(labels, feat_set2())
 
 
 
 ################ Model Training ##########################################################
-##train the models, we can afford to retrain the maxentmodel whenever we want, since the underlying implementation 
-#calls a fast java trainer
+##train the models, we can afford to retrain the maxentmodel whenever we want, since the underlying implementation calls a fast java trainer
 def train_models(models, tagged_corpus):
     for name, model in models.iteritems():
         print "Training %s" % name
@@ -237,14 +248,62 @@ dev_oov = confusion_matrix_by_oov(models, dev_results, devdat, traindat, "../res
 
 ################ Tag test set ############################################################
 #Based on results from the development set, we pick the best models in each class and
-#best_models_names = ["bigram kn s2 3", "trigram lp s2 3", "maxent f2"]
-#best_models = {}
-#for name in best_models_names:
-#    best_models[name] = models[name]
+best_models_names = ["2gram kn-0.16 s2 3", "3gram lp s2 3", "maxent f2"]
+best_models = {}
+for name in best_models_names:
+    best_models[name] = models[name]
 
-#opt_beam = [ 0.5 ]
-#test_results = test_models(best_models, testdat, opt_beam, "../results/test_results.tsv")
-#test_oov = oov_calc(best_models, traindat, testdat, ".../results/test_oov.tsv")
+opt_beam = [ 0.5 ]
+test_results = test_models(best_models, testdat, opt_beam, "../results/test_results.tsv")
+test_oov = confusion_matrix_by_oov(best_models, test_results, testdat, traindat, "../results/test_oov.tsv")
+
+####   Create final maximum entropy model based on confusion matrix and additional features #######
+def feat_set3():
+    feats = feat_set2()
+    feats["ends-in-en"] = lambda word: re.search(r'en$', word) != None
+    feats["begins-with-w"] = lambda word: word.upper()[0] == 'W'
+    feats["has-zu"] = lambda word: re.search(r'zu', word) != None
+    return feats
+    
+
+last_maxent = Maxentmodel(labels, feat_set3())
+last_maxent.train(traindat, "last_maxent_model.txt")
+final_results = last_maxent.tag_corpus(rem_tags(testdat), method = "viterbi", beam = 0.5)
+
+
+
+################ Compare performance with OpenNLP results ################################
+#write out test data
+import codecs
+test_file = codecs.open("../data/opennlp_test_data.txt", "w", encoding="latin1")
+for sent in rem_tags(testdat):
+    test_file.write(" ".join(sent) + "\n")
+
+    
+test_file.close()
+#call ME model
+subprocess.call("cat ../data/opennlp_test_data.txt | opennlp POSTagger de-pos-maxent.bin > ../results/opennlp_maxent_results.txt", shell = True)
+#call Perceptron model
+subprocess.call("cat ../data/opennlp_test_data.txt | opennlp POSTagger de-pos-perceptron.bin > ../results/opennlp_perceptron_results.txt", shell = True)
+
+
+def opennlp_read_results(path):
+    f = open(path, "r")
+    results = []
+    for line in f:
+        sent_results = [tuple(word_tag.split("_")) for word_tag in line.rstrip('\n').split(" ")]
+        results.append(sent_results)
+    f.close()
+    return results
+        
+calc_matrix = Ngrammodel(labels, lambda x: x).confusion_matrix_corpus #just a dummy to calculate matrix
+opennlp_maxent = opennlp_read_results("../results/opennlp_maxent_results.txt")
+opennlp_perceptron = opennlp_read_results("../results/opennlp_perceptron_results.txt")
+
+print "opennlp maxent accuracy: %f" % accuracy(calc_matrix(testdat, opennlp_maxent))
+print "opennlp perceptron accuracy: %f" % accuracy(calc_matrix(testdat, opennlp_perceptron))
+
+
 
 
 
