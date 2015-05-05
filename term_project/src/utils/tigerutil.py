@@ -1,3 +1,7 @@
+#Author: Jose Cambronero (N17381190)
+#jpc485@nyu.edu
+#Spring 2015 NLP Term Project
+
 from os import path
 import codecs
 
