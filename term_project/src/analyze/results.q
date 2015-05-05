@@ -49,7 +49,6 @@ confusion:update accuracy:(exec observed!acc from testaccbytag where model like 
 confusion:`tagcon xdesc `observed`predicted`predpct`tagcon`accuracy xcols confusion
 confusion:@[confusion;exec c from meta confusion where t="s";{`$ssr'[string x;",";"/"]}]
 
-/*** comparison to OpenNLP *****/
 
 `:/Users/josecambronero/MS/S15/nlp/term_project/results/test_acc.csv 0:csv 0:testacc
 `:/Users/josecambronero/MS/S15/nlp/term_project/results/test_acc_by_tag.tsv 0:"\t" 0:testaccbytag

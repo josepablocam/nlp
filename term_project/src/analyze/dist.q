@@ -3,11 +3,8 @@
 //ID: N17381190
 
 /
-    We compute some distributional statistics for suffixes in the TIGER corpus, in order
-    to identify those that might potentially help with unknown word classification
-    We seek to find suffixes which generalize well (meaning multiple words have it)
-    and that tend to be associated with a specific tag, so that our distribution is concentrated
-    around that tag
+    We compute some distributional statistics for the TIGER corpus to help in our
+    analysis of the data 
 \
 
 
@@ -73,7 +70,7 @@ select from suffixcomp where pct>0.9
 
 
 
-hsym[`$"../results/tagdist.tsv"] 0:"\t" 0:tagdist
+hsym[`$"../../results/tagdist.tsv"] 0:"\t" 0:tagdist
 show "\t" 0:tagdist
 
-hsym[`$"../results/unknown_by_threshold.csv"] 0:csv 0:unknowndist
+hsym[`$"../../results/unknown_by_threshold.csv"] 0:csv 0:unknowndist
