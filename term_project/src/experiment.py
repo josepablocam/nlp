@@ -276,7 +276,7 @@ def feat_set3():
     
 
 last_maxent = Maxentmodel(labels, feat_set3())
-last_maxent.train(traindat, "last_maxent_model.txt")
+last_maxent.train(traindat, MODELPATH + "last_maxent_model.txt")
 final_results = last_maxent.tag_corpus(rem_tags(testdat), method = "viterbi", beam = 0.5)
 
 
